@@ -12,3 +12,5 @@ Requisites:
 Python >= 3.3
 mpg123
 python ncurses
+
+https://github.com/son-link/jamendoradioplayer
