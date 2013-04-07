@@ -29,13 +29,20 @@ import json
 import os
 import _thread
 import optparse
+<<<<<<< HEAD
 import queue
 import urllib.request
+=======
+
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 from sys import stdout
 from subprocess import Popen, PIPE, DEVNULL
 from time import sleep
 from colorama import init, Fore
+<<<<<<< HEAD
 from os import getenv
+=======
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 
 class JamendoRadioPlayer:
 	def __init__(self):
@@ -46,6 +53,7 @@ class JamendoRadioPlayer:
 
 	def init(self, radio):
 		self.model.setRadios(self.jamendo.getRadios())
+<<<<<<< HEAD
 
 		if radio:
 			# Interfaz colorama (se envía una radio)
@@ -59,6 +67,21 @@ class JamendoRadioPlayer:
 			# Dibujado inicial de la vista
 			self.model.view.render(self.model)
 
+=======
+
+		if radio:
+			# Interfaz colorama (se envía una radio)
+
+			# Capturar CTRL-c para terminar la aplicación
+			signal.signal(signal.SIGINT, self.__signalHandler)
+
+			# Inicializar la vista
+			self.model.view = ColoramaView(self)
+
+			# Dibujado inicial de la vista
+			self.model.view.render(self.model)
+			
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 			# Buscar la radio
 			x = None
 			for i, r in enumerate(self.model.radios):
@@ -71,6 +94,7 @@ class JamendoRadioPlayer:
 		else:
 			# Interfaz curses
 			curses.wrapper(self.curses)
+<<<<<<< HEAD
 
 	def curses(self, stdscr):
 		# Inicializar la vista
@@ -85,11 +109,31 @@ class JamendoRadioPlayer:
 	def echo(self):
 		radios = self.jamendo.getRadios()
 
+=======
+
+	def curses(self, stdscr):
+		# Inicializar la vista
+		self.model.view = CursesView(self, stdscr)
+
+		# Dibujado inicial de la vista
+		self.model.view.render(self.model)
+
+		# Loop de aplicación
+		self.model.view.loop()
+
+	def echo(self):
+		radios = self.jamendo.getRadios()
+
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 		print("{0:5}  {1}".format("RADIO", "NAME"))
 		for r in radios:
 			print("{0:5}. {1}".format(r["id"], r["dispname"]))
 
 	def quit(self):
+<<<<<<< HEAD
+=======
+		self.view.quit()
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 		exit()
 
 	def __signalHandler(self, signal, frame):
@@ -126,7 +170,10 @@ class Player:
 	def __init__(self, model):
 		self.model = model
 		self.model.setVolume(100)
+<<<<<<< HEAD
 		self.volume = 100
+=======
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 		self.model.setPlaying(False)
 		self.pipe = Popen(["mpg123","-R"], stdin=PIPE, stdout=DEVNULL, stderr=DEVNULL)
 
@@ -198,9 +245,15 @@ class Model:
 	def setVolume(self, volume):
 		self.volume = volume
 		self.__notify()
+<<<<<<< HEAD
 
 	# TODO:
 	# Estos métodos que acceden a las propiedades devueltas por la API de
+=======
+	
+	# TODO:
+	# Estos métodos que acceden a las propiedades devueltas por la API de 
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 	# Jamendo probablemente estarían mejor en una clase de utilidades. ¿?
 	def getRadioName1(self, radio):
 		if not radio:
@@ -233,11 +286,14 @@ class Model:
 			return ''
 		return self.radio['playingnow']['track_name']
 
+<<<<<<< HEAD
 	def getTrackID(self):
 		if not self.radio:
 			return ''
 		return self.radio['playingnow']['track_id']
 
+=======
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 # Vista colorama
 class ColoramaView:
 	def __init__(self, jrp):
@@ -253,8 +309,11 @@ class CursesView:
 	def __init__(self, jrp, stdscr):
 		self.jrp = jrp
 		self.r = 0
+<<<<<<< HEAD
 		# Esto inicia la función encargado de gestinoar una cola de datos
 		self.queue = queue.Queue()
+=======
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 
 		# Inicializar la interfaz
 		self.stdscr = stdscr
@@ -292,17 +351,23 @@ class CursesView:
 		self.statusbar = self.win.derwin(2, 78, 21, 1)
 		self.statusbar.bkgd(' ', curses.color_pair(2))
 
+<<<<<<< HEAD
 		# Actual download
 		self.downloadwin = self.statusbar.derwin(1, 78, 1, 0)
 
+=======
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 		# Volume info
 		self.volumewin = self.statusbar.derwin(1, 19, 0, 58)
 		self.volumewin.addnstr(0, 0, 'Volume: ##########', 19)
 
 		self.win.overwrite(self.stdscr)
 
+<<<<<<< HEAD
 		_thread.start_new_thread(self.__downloadFile, ())
 
+=======
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 	# Método que renderiza el modelo en la interfaz
 	def render(self, model):
 		for i, radio in enumerate(model.radios):
@@ -325,7 +390,10 @@ class CursesView:
 		i = self.r
 		key = self.stdscr.getch()
 		while key != ord('\n'):
+<<<<<<< HEAD
 			sleep(0.05)
+=======
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 			# It was a pain in the ass trying to get the arrows working.
 			# Since the curses.KEY_* did not work, I used the raw return value.
 			if key == 258:
@@ -349,7 +417,10 @@ class CursesView:
 	def loop(self):
 		try:
 			while True:
+<<<<<<< HEAD
 				sleep(0.05)
+=======
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 				k = self.stdscr.getch()
 				if k == ord('c'):
 					radio = self.menu()
@@ -364,6 +435,7 @@ class CursesView:
 					self.jrp.player.volumeDown()
 				elif k == ord('s'):
 					self.jrp.player.volumeUp()
+<<<<<<< HEAD
 				elif k == ord('d'):
 					self.Download()
 		except KeyboardInterrupt:
@@ -392,6 +464,11 @@ class CursesView:
 			self.downloadwin.clear()
 			self.downloadwin.refresh()
 
+=======
+		except KeyboardInterrupt:
+			self.jrp.quit()
+
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 	def quit(self):
 		self.killThreads = True
 		curses.endwin()
@@ -409,5 +486,9 @@ if __name__ == '__main__':
 		JamendoRadioPlayer().init(options.radio)
 		while True:
 			input()
+<<<<<<< HEAD
 	else:
+=======
+	else:		
+>>>>>>> 6f26cd022eded8f66b341879e5fa028cf3b04bc2
 		JamendoRadioPlayer().init(None)
