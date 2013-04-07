@@ -19,36 +19,216 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import curses, http.client
+import sys
+sys.dont_write_bytecode = True
+
+import signal
+import curses
+import http.client
 import json
-from sys import stdout
-from time import sleep
-from subprocess import Popen, PIPE, DEVNULL
+import os
 import _thread
+import optparse
 
-stdscr = curses.initscr()
-curses.noecho()
-curses.cbreak()
-curses.curs_set(0)
-curses.doupdate()
-stdscr.keypad(1)
-stdscr.nodelay(1)
-curses.start_color()
-curses.init_pair(1,curses.COLOR_BLACK, curses.COLOR_WHITE)
-curses.init_pair(2,curses.COLOR_WHITE, curses.COLOR_BLUE)
-curses.resize_term(24, 80)
-stdout.write("\x1b]2;Jamendo Radio Player\x07")
-
-h = curses.color_pair(1)
-n = curses.A_NORMAL
+from sys import stdout
+from subprocess import Popen, PIPE, DEVNULL
+from time import sleep
+from colorama import init, Fore
 
 class JamendoRadioPlayer:
 	def __init__(self):
-		# Global variables
-		self.player = Player()
+		self.model = Model()
+		self.player = Player(self.model)
 		self.jamendo = Jamendo()
+		self.view = None
 
-		self.track = 0
+	def init(self, radio):
+		self.model.setRadios(self.jamendo.getRadios())
+
+		if radio:
+			signal.signal(signal.SIGINT, self.signalHandler)
+
+			self.view = ColoramaView(self)
+			self.model.view = self.view
+			for i, r in enumerate(self.model.radios):
+				if int(radio) == r['id']:
+					self.player.play(self.jamendo.getRadio(self.model.getRadioName1(r)))
+					break
+		else:
+			curses.wrapper(self.curses)
+
+	def curses(self, stdscr):
+		self.view = CursesView(self, stdscr)
+		self.model.view = self.view
+		self.view.render()
+		self.view.loop()
+
+	def echo(self):
+		radios = self.jamendo.getRadios()
+
+		print("{0:5}  {1}".format("RADIO", "NAME"))
+		for r in radios:
+			print("{0:5}. {1}".format(r["id"], r["dispname"]))
+
+	def quit(self):
+		self.view.quit()
+		exit()
+
+	def signalHandler(self, signal, frame):
+		sys.exit(0)
+
+class Jamendo:
+	def __init__(self):
+		self.client_id = '47c19839' # Don't change value
+
+	def getRadios(self):
+		radios = self.__getData("radios/?client_id=%s&format=json&limit=all" % self.client_id)
+		return radios['results']
+
+	def getRadio(self, name):
+		radio = self.__getData("radios/stream?client_id=%s&format=json&name=%s" % (self.client_id, name))
+		return radio['results'][0]
+
+	def __getData(self, get):
+		try:
+			conn = http.client.HTTPConnection("api.jamendo.com")
+			conn.request("GET", "/v3.0/%s" % get)
+			response = conn.getresponse()
+			if response.status == 200:
+				data = response.read().decode()
+				return json.loads(data)
+			else:
+				return False
+		except:
+			return False
+
+class Player:
+	def __init__(self, model):
+		self.model = model
+		self.model.setVolume(100)
+		self.model.setPlaying(False)
+		self.pipe = Popen(["mpg123","-R"], stdin=PIPE, stdout=DEVNULL, stderr=DEVNULL)
+
+	def play(self, radio):
+		if not radio:
+			return
+		self.model.setRadio(radio)
+		self.model.setPlaying(True)
+		self.pipe.stdin.write(bytes('LOAD %s\n' % self.model.getRadioStream(), 'UTF-8'))
+
+	def stop(self):
+		self.model.setPlaying(False)
+		self.pipe.stdin.write(bytes('STOP\n', 'UTF-8'))
+
+	def pause(self):
+		self.model.setPlaying(False)
+		self.pipe.stdin.write(bytes('PAUSE\n', 'UTF-8'))
+
+	def playPause(self):
+		self.model.setPlaying(not self.isPlaying())
+		self.pause()
+
+	def isPlaying(self):
+		return self.model.playing
+
+	def volumeUp(self):
+		self.setVolume(self.volume + 5)
+
+	def volumeDown(self):
+		self.setVolume(self.volume - 5)
+
+	def setVolume(self, volume):
+		if volume < 0 or volume > 100:
+			return
+		self.model.setVolume(volume)
+		self.pipe.stdin.write(bytes('VOLUME %i\n' % self.model.volume, 'UTF-8'))
+
+class Model:
+	def __init__(self):
+		self.radios = None
+		self.radio = None
+		self.playing = None
+		self.volume = None
+
+		self.view = None
+
+	def __notify(self):
+		if self.view:
+			self.view.render(self)
+
+	def setRadios(self, radios):
+		self.radios = radios
+		self.__notify()
+
+	def setRadio(self, radio):
+		self.radio = radio
+		self.__notify()
+
+	def setPlaying(self, playing):
+		self.playing = playing
+		self.__notify()
+
+	def setVolume(self, volume):
+		self.volume = volume
+		self.__notify()
+
+	def getRadioName1(self, radio):
+		if not radio:
+			return
+		return radio['name']
+
+	def getRadioName0(self):
+		return self.getRadioName1(self.radio)
+
+	def getRadioDisplayName1(self, radio):
+		if not radio:
+			return
+		return radio['dispname']
+
+	def getRadioDisplayName0(self):
+		return self.getRadioDisplayName1(self.radio)
+
+	def getRadioStream(self):
+		if not self.radio:
+			return
+		return self.radio['stream']
+
+	def getRadioPlayingNowArtistName(self):
+		if not self.radio:
+			return ''
+		return self.radio['playingnow']['artist_name']
+
+	def getRadioPlayingNowTrackName(self):
+		if not self.radio:
+			return ''
+		return self.radio['playingnow']['track_name']
+
+class ColoramaView:
+	def __init__(self, jrp):
+		self.jrp = jrp
+
+	def render(self, model):
+		print(model.getRadioDisplayName0())
+		print(model.getRadioPlayingNowArtistName())
+		print(model.getRadioPlayingNowTrackName())
+
+class CursesView:
+	def __init__(self, jrp, stdscr):
+		self.jrp = jrp
+		self.r = 0
+
+		self.stdscr = stdscr
+		curses.noecho()
+		curses.cbreak()
+		curses.curs_set(0)
+		curses.doupdate()
+		self.stdscr.keypad(1)
+		self.stdscr.nodelay(1)
+		curses.start_color()
+		curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_WHITE)
+		curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLUE)
+		curses.resize_term(24, 80)
+		stdout.write("\x1b]2;Jamendo Radio Player\x07")
 
 		# Main window
 		self.win =  curses.newwin(24, 80, 0, 0)
@@ -67,7 +247,6 @@ class JamendoRadioPlayer:
 
 		# Subwindow for show the track tags
 		self.wintags = self.win.derwin(4, 45, 4, 34)
-		self.wintags.refresh()
 
 		# Stattus bar
 		self.statusbar = self.win.derwin(2, 78, 21, 1)
@@ -77,189 +256,85 @@ class JamendoRadioPlayer:
 		self.volumewin = self.statusbar.derwin(1, 19, 0, 58)
 		self.volumewin.addnstr(0, 0, 'Volume: ##########', 19)
 
+		self.win.overwrite(self.stdscr)
+
+	def render(self, model):
+		for i, radio in enumerate(model.radios):
+			if i == self.r:
+				self.win.addstr(i + 4, 2, model.getRadioDisplayName1(radio), curses.color_pair(2))
+			else:
+				self.win.addstr(i + 4, 2, model.getRadioDisplayName1(radio), curses.A_NORMAL)
 		self.win.refresh()
-		self.win.overwrite(stdscr)
 
-		radio = self.radiosMenu()
-		self.play(radio)
+		self.wintags.addstr(0, 0, model.getRadioPlayingNowArtistName())
+		self.wintags.addstr(2, 0, model.getRadioPlayingNowTrackName())
+		self.wintags.refresh()
 
-		try:
-			while True:
-				k = stdscr.getch()
-				if k == ord('c'):
-					radio = self.radiosMenu()
-					self.play(radio)
-				elif k == ord('q'):
-					self.quit()
-				elif k == ord('x'):
-					self.stop()
-				elif k == ord('z'):
-					self.playPause()
-				elif k == ord('a'):
-					self.volumeDown()
-				elif k == ord('s'):
-					self.volumeUp()
-
-		except KeyboardInterrupt:
-			self.quit()
-
-	def radiosMenu(self):
-		"""List radios"""
-		self.statusbar.addnstr(1, 1, 'Geting radios list', 78)
-		self.statusbar.clear()
-		self.statusbar.refresh()
-
-		radios = self.jamendo.getRadios()
-		if radios['headers']['code'] == 0:
-			totalradios = len(radios['results'])
-			pos = 0
-			x = None
-			h = curses.color_pair(2)
-			while x != ord('\n'):
-				self.win.addstr(2, 2, "Radios", curses.A_BOLD)
-				for index in range(totalradios):
-					if pos == index:
-						self.win.addstr(index + 4, 2, radios['results'][index]['dispname'], h)
-					else:
-						self.win.addstr(index + 4, 2, radios['results'][index]['dispname'], n)
-				self.win.refresh()
-				x = stdscr.getch()
-				# It was a pain in the ass trying to get the arrows working.
-				if x == 258:
-					if pos < totalradios - 1:
-						pos += 1
-					else:
-						pos = 0
-				# Since the curses.KEY_* did not work, I used the raw return value.
-				elif x == 259:
-					if pos > 0:
-						pos += -1
-					else:
-						pos = totalradios - 1
-				#elif x != ord('\n'):
-					#curses.flash()
-					# show_error() is my custom function for displaying a message:
-					# show_error(str:message, int:line#, int:seconds_to_display)
-					#show_error('Invalid Key',11,1)
-
-			return int(pos)
-
-	def play(self, radio):
-		"""Start playing"""
-		self.radio = radio
-		radio = self.jamendo.getRadio(self.radio)
-
-		if (len(radio['results']) == 0):
-			return
-
-		stream = radio['results'][0]['stream']
-
-		self.player.play(stream)
-
-		_thread.start_new_thread(self.__getTrackTags, ())
-
-	def stop(self):
-		self.player.stop()
-
-	def playPause(self):
-		self.player.playPause()
-
-	def volumeUp(self):
-		self.player.volumeUp()
-		self.__updateVolume()
-
-	def volumeDown(self):
-		self.player.volumeDown()
-		self.__updateVolume()
-
-	def __updateVolume(self):
-		v = "#" * int(self.player.volume / 10)
+		v = "#" * int(model.volume / 10)
 		self.volumewin.addnstr(0, 0, 'Volume: %s' % v, 19)
 		self.volumewin.refresh()
 
+	def menu(self):
+		n = len(self.jrp.model.radios) - 1
+		i = self.r
+		key = self.stdscr.getch()
+		while key != ord('\n'):
+			# It was a pain in the ass trying to get the arrows working.
+			# Since the curses.KEY_* did not work, I used the raw return value.
+			if key == 258:
+				i += 1
+			elif key == 259:
+				i -= 1
+
+			if i < 0:
+				i = 0
+			if i > n:
+				i = n
+
+			self.r = i
+			self.render()
+
+			key = self.stdscr.getch()
+
+		name = self.jrp.model.radios[self.r]['name']
+		return self.jrp.jamendo.getRadio(name)
+
+	def loop(self):
+		try:
+			while True:
+				k = self.stdscr.getch()
+				if k == ord('c'):
+					radio = self.menu()
+					self.jrp.player.play(radio)
+				elif k == ord('q'):
+					self.jrp.quit()
+				elif k == ord('x'):
+					self.jrp.player.stop()
+				elif k == ord('z'):
+					self.jrp.player.playPause()
+				elif k == ord('a'):
+					self.jrp.player.volumeDown()
+				elif k == ord('s'):
+					self.jrp.player.volumeUp()
+		except KeyboardInterrupt:
+			self.jrp.quit()
+
 	def quit(self):
-		"""Exit"""
 		self.killThreads = True
 		curses.endwin()
 		_thread.exit()
-		exit()
-
-	def __getTrackTags(self):
-		"""Get tags from actual track"""
-		while True:
-			radio = self.jamendo.getRadio(self.radio)
-			self.wintags.clear()
-			self.wintags.addstr(0, 0, radio['results'][0]['playingnow']['artist_name'])
-			self.wintags.addstr(2, 0, radio['results'][0]['playingnow']['track_name'])
-			self.wintags.refresh()
-			ml = int(radio['results'][0]['callmeback'])
-			sleep(ml / 1000.0)
-
-class Jamendo:
-	def __init__(self): 
-		self.client_id = '47c19839' # Don't change value
-		self.radios = None
-
-	def getRadios(self):
-		if not self.radios:
-			self.radios = self.__getData("radios/?client_id=%s&format=json&limit=all" % self.client_id)
-		return self.radios
-
-	def getRadio(self, radio):
-		return self.__getData("radios/stream?client_id=%s&format=json&id=%i" % (self.client_id, radio))
-
-	def __getData(self, get):
-		try:
-			conn = http.client.HTTPConnection("api.jamendo.com")
-			conn.request("GET", "/v3.0/%s" % get)
-			response = conn.getresponse()
-			if response.status == 200:
-				data = response.read().decode()
-				return json.loads(data)
-			else:
-				return False
-		except:
-			return False
-
-class Player:
-	def __init__(self): 
-		self.volume = 100
-		self.stream = None
-		self.playing = False
-		self.pipe = Popen(["mpg123","-R"], stdin=PIPE, stdout=DEVNULL, stderr=DEVNULL)
-
-	def play(self, stream):
-		if not stream:
-			return
-		self.stream = stream
-		self.playing = True
-		self.pipe.stdin.write(bytes('LOAD %s\n' % self.stream, 'UTF-8'))
-
-	def stop(self):
-		self.Playing = False
-		self.pipe.stdin.write(bytes('STOP\n', 'UTF-8'))
-
-	def pause(self):
-		self.playing = False
-		self.pipe.stdin.write(bytes('PAUSE\n', 'UTF-8'))
-
-	def playPause(self):
-		self.pause()
-
-	def isPlaying(self):
-		return self.playing
-
-	def volumeUp(self):
-		self.setVolume(self.volume + 5)
-
-	def volumeDown(self):
-		self.setVolume(self.volume - 5)
-
-	def setVolume(self, volume):
-		if volume < 0 or volume > 100:
-			return
-		self.volume = volume
-		self.pipe.stdin.write(bytes('VOLUME %i\n' % self.volume, 'UTF-8'))
 
 if __name__ == '__main__':
-	JamendoRadioPlayer()
+	parser = optparse.OptionParser(usage = 'usage: JamendoRadioPlayer.py [options]')
+	parser.add_option('-e', '--echo', action='store_true', help='List Jamendo radios')
+	parser.add_option('-r', '--radio', action='store', help='Play a Jamendo radio')
+	(options, args) = parser.parse_args()
+
+	if options.echo:
+		JamendoRadioPlayer().echo()
+	elif options.radio:
+		JamendoRadioPlayer().init(options.radio)
+		while True:
+			input()
+	else:
+		JamendoRadioPlayer().init(None)
