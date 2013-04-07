@@ -17,7 +17,7 @@
 #  GNU General Public License for more details.
 #
 #  You should have received a copy of the GNU General Public License
-#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#  along with this program.  If not, see <http:#www.gnu.org/licenses/>.
 
 import sys
 sys.dont_write_bytecode = True
@@ -46,22 +46,39 @@ class JamendoRadioPlayer:
 		self.model.setRadios(self.jamendo.getRadios())
 
 		if radio:
-			signal.signal(signal.SIGINT, self.signalHandler)
+			# Interfaz colorama (se envía una radio)
 
-			self.view = ColoramaView(self)
-			self.model.view = self.view
+			# Capturar CTRL-c para terminar la aplicación
+			signal.signal(signal.SIGINT, self.__signalHandler)
+
+			# Inicializar la vista
+			self.model.view = ColoramaView(self)
+
+			# Dibujado inicial de la vista
+			self.model.view.render(self.model)
+			
+			# Buscar la radio
+			x = None
 			for i, r in enumerate(self.model.radios):
 				if int(radio) == r['id']:
-					self.player.play(self.jamendo.getRadio(self.model.getRadioName1(r)))
+					x = self.jamendo.getRadio(self.model.getRadioName1(r))
 					break
+
+			# Reproducir la radio
+			self.player.play(x)
 		else:
+			# Interfaz curses
 			curses.wrapper(self.curses)
 
 	def curses(self, stdscr):
-		self.view = CursesView(self, stdscr)
-		self.model.view = self.view
-		self.view.render()
-		self.view.loop()
+		# Inicializar la vista
+		self.model.view = CursesView(self, stdscr)
+
+		# Dibujado inicial de la vista
+		self.model.view.render(self.model)
+
+		# Loop de aplicación
+		self.model.view.loop()
 
 	def echo(self):
 		radios = self.jamendo.getRadios()
@@ -74,9 +91,10 @@ class JamendoRadioPlayer:
 		self.view.quit()
 		exit()
 
-	def signalHandler(self, signal, frame):
-		sys.exit(0)
+	def __signalHandler(self, signal, frame):
+		self.quit()
 
+# Clase para comunicarse con la API de Jamendo
 class Jamendo:
 	def __init__(self): 
 		self.client_id = '47c19839' # Don't change value
@@ -102,6 +120,7 @@ class Jamendo:
 		except:
 			return False
 
+# Clase para reproducir
 class Player:
 	def __init__(self, model):
 		self.model = model
@@ -143,6 +162,9 @@ class Player:
 		self.model.setVolume(volume)
 		self.pipe.stdin.write(bytes('VOLUME %i\n' % self.model.volume, 'UTF-8'))
 
+# Clase que contiene los datos que se mostrarán en el la vista.
+# Cuando se produzca algun cambio en alguno de ellos la vista será notificada
+# para que se rederice de nuevo con la información cambiada (Patrón MVC).
 class Model:
 	def __init__(self):
 		self.radios = None
@@ -152,6 +174,7 @@ class Model:
 
 		self.view = None
 
+	# Notificar a la vista de cambios
 	def __notify(self):
 		if self.view:
 			self.view.render(self)
@@ -172,6 +195,9 @@ class Model:
 		self.volume = volume
 		self.__notify()
 	
+	# TODO:
+	# Estos métodos que acceden a las propiedades devueltas por la API de 
+	# Jamendo probablemente estarían mejor en una clase de utilidades. ¿?
 	def getRadioName1(self, radio):
 		if not radio:
 			return
@@ -203,6 +229,7 @@ class Model:
 			return ''
 		return self.radio['playingnow']['track_name']
 
+# Vista colorama
 class ColoramaView:
 	def __init__(self, jrp):
 		self.jrp = jrp
@@ -212,11 +239,13 @@ class ColoramaView:
 		print(model.getRadioPlayingNowArtistName())
 		print(model.getRadioPlayingNowTrackName())
 
+# Vista curses
 class CursesView:
 	def __init__(self, jrp, stdscr):
 		self.jrp = jrp
 		self.r = 0
 
+		# Inicializar la interfaz
 		self.stdscr = stdscr
 		curses.noecho()
 		curses.cbreak()
@@ -258,6 +287,7 @@ class CursesView:
 
 		self.win.overwrite(self.stdscr)
 
+	# Método que renderiza el modelo en la interfaz
 	def render(self, model):
 		for i, radio in enumerate(model.radios):
 			if i == self.r:
@@ -292,7 +322,7 @@ class CursesView:
 				i = n
 
 			self.r = i
-			self.render()
+			self.render(self.jrp.model)
 
 			key = self.stdscr.getch()
 
